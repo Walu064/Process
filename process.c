@@ -138,11 +138,7 @@ void initialize_process(int id, const char *ip, int port) {
     memset(&this_process.address, 0, sizeof(this_process.address));
     this_process.address.sin_family = AF_INET;
     this_process.address.sin_port = htons(port);
-    if (inet_pton(AF_INET, ip, &this_process.address.sin_addr) <= 0) {
-        perror("Błąd przy konwersji adresu IP");
-        exit(EXIT_FAILURE);
-    }
-
+    this_process.address.sin_addr.s_addr = htonl(INADDR_ANY);
     // Bind
     if (bind(this_process.socket_fd, (struct sockaddr *)&this_process.address, sizeof(this_process.address)) < 0) {
         perror("Błąd przy bindowaniu gniazda");
