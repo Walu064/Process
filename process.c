@@ -6,11 +6,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <ifaddrs.h>
 
 #define MAX_BUFFER 1024
 #define WAIT_TIME 5
 #define MAX_PROCESSES 10
 #define WAIT_TIME_FOR_LEADER 10
+#define PORT 11000
 
 typedef struct {
     int id;
@@ -49,6 +51,7 @@ void handle_leader_announcement(const char *message);
 int check_for_election_responses();
 void announce_leadership();
 void wait_for_leader_announcement();
+char* get_eth0_ip();
 
 int main(int argc, char *argv[]) {
     GtkBuilder *builder;
@@ -56,7 +59,7 @@ int main(int argc, char *argv[]) {
     GtkWidget *start_stop_button, *connect_button, *initiate_election_button;
     GtkEntry *ip_entry, *port_entry;
 
-    initialize_process(1, "127.0.0.1", 5000);
+    initialize_process(1, "127.0.0.1", PORT);
 
     pthread_t listen_thread;
     pthread_create(&listen_thread, NULL, listen_for_messages, NULL);
@@ -90,6 +93,32 @@ int main(int argc, char *argv[]) {
     gtk_main();
 
     return 0;
+}
+
+char* get_eth0_ip() {
+    struct ifaddrs *ifaddr, *ifa;
+    char *address = NULL;
+
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("Błąd przy getifaddrs");
+        return NULL;
+    }
+
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL)
+            continue;
+
+        if (ifa->ifa_addr->sa_family == AF_INET) { // Sprawdź, czy to adres IPv4
+            if (strcmp(ifa->ifa_name, "eth0") == 0) { // Sprawdź, czy to interfejs eth0
+                address = malloc(INET_ADDRSTRLEN);
+                inet_ntop(AF_INET, &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr, address, INET_ADDRSTRLEN);
+                break;
+            }
+        }
+    }
+
+    freeifaddrs(ifaddr);
+    return address;
 }
 
 void initialize_process(int id, const char *ip, int port) {
@@ -258,11 +287,15 @@ void on_start_stop_button_clicked(GtkButton *button, gpointer user_data) {
         char process_id_str[MAX_BUFFER];
         char own_ip_str[MAX_BUFFER];
         char own_port_str[MAX_BUFFER];
-        sprintf(process_id_str, "Identyfikator Procesu: %d", this_process.id);
+        sprintf(process_id_str, "%d", this_process.id);
         sprintf(own_ip_str, "Własny Adres IP: %s", this_process.ip);
         sprintf(own_port_str, "Port: %d", this_process.port);
         gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "process_id")), process_id_str);
-        gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "own_ip")), own_ip_str);
+        char *eth0_ip = get_eth0_ip();
+        if (eth0_ip != NULL) {
+            gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "own_ip")), eth0_ip);
+            free(eth0_ip);
+        }
         gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "own_port")), own_port_str);
     } else {
         // Kod do zatrzymania procesu
@@ -272,12 +305,11 @@ void on_start_stop_button_clicked(GtkButton *button, gpointer user_data) {
             current_connection.socket_fd = 0;
         }
 
-        gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "process_status")), "Nieaktywny");
-
-        // Wyczyść etykiety z ID, adresu IP i portu
         gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "process_id")), "");
         gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "own_ip")), "");
         gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "own_port")), "");
+        gtk_label_set_text(GTK_LABEL(gtk_builder_get_object(GTK_BUILDER(user_data), "process_status")), "Nieaktywny");
+
     }
 
     is_active = !is_active;
